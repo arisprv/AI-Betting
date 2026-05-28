@@ -1,75 +1,79 @@
-import requests
 import pandas as pd
-from datetime import datetime
+from api_client import APIClient
+from config import CONFIG
+from constants import FOOTBALL_API_BASE, STATUS_FINISHED, STATUS_SCHEDULED
+from logger import get_logger
 
-# ================= CONFIG =================
-API_TOKEN = "55232aed707e498c914f70d4cf2f40c3"  # Replace with your football-data.org API key
-LEAGUES = {
-    "PL": "Premier League",
-    "PD": "La Liga",
-    "SA": "Serie A",
-    "BL1": "Bundesliga",
-    "FL1": "Ligue 1"
-}
-SEASON = 2025
-HISTORICAL_FILE = "matches_2025.csv"
-UPCOMING_FILE = "upcoming_matches_2025.csv"
-# ==========================================
+log = get_logger(__name__)
 
-headers = {"X-Auth-Token": API_TOKEN}
 
-all_historical_matches = []
-all_upcoming_matches = []
+class FootballDataClient:
+    def __init__(self, token: str = None):
+        token = token or CONFIG.football_api_token
+        self.client = APIClient(FOOTBALL_API_BASE, headers={"X-Auth-Token": token})
 
-for league_code, league_name in LEAGUES.items():
-    print(f"Fetching matches for {league_name} ({league_code})...")
+    def fetch_matches(self, league_code: str, season: int, status: str) -> list[dict]:
+        log.info("Fetching %s matches for %s season %d", status, league_code, season)
+        data = self.client.get(f"competitions/{league_code}/matches", params={"season": season, "status": status})
+        return data.get("matches", [])
 
-    # 1️⃣ Historical matches
-    hist_url = f"https://api.football-data.org/v4/competitions/{league_code}/matches"
-    hist_params = {"season": SEASON, "status": "FINISHED"}
-    hist_resp = requests.get(hist_url, headers=headers, params=hist_params)
-
-    if hist_resp.status_code == 200:
-        hist_data = hist_resp.json()
-        for match in hist_data.get("matches", []):
-            all_historical_matches.append({
+    def fetch_historical(self, league_code: str, season: int) -> list[dict]:
+        matches = self.fetch_matches(league_code, season, STATUS_FINISHED)
+        records = []
+        for match in matches:
+            records.append({
                 "league": league_code,
                 "date": match["utcDate"],
                 "homeTeam": match["homeTeam"]["name"],
                 "awayTeam": match["awayTeam"]["name"],
                 "homeScore": match["score"]["fullTime"]["home"],
-                "awayScore": match["score"]["fullTime"]["away"]
+                "awayScore": match["score"]["fullTime"]["away"],
             })
-    else:
-        print(f"⚠️ Failed to fetch historical matches for {league_name}: {hist_resp.status_code}")
+        return records
 
-    # 2️⃣ Upcoming matches
-    upcoming_url = f"https://api.football-data.org/v4/competitions/{league_code}/matches"
-    upcoming_params = {"season": SEASON, "status": "SCHEDULED"}
-    upcoming_resp = requests.get(upcoming_url, headers=headers, params=upcoming_params)
-
-    if upcoming_resp.status_code == 200:
-        upcoming_data = upcoming_resp.json()
-        for match in upcoming_data.get("matches", []):
-            all_upcoming_matches.append({
+    def fetch_upcoming(self, league_code: str, season: int) -> list[dict]:
+        matches = self.fetch_matches(league_code, season, STATUS_SCHEDULED)
+        records = []
+        for match in matches:
+            records.append({
                 "league": league_code,
                 "utcDate": match["utcDate"],
                 "homeTeam": match["homeTeam"]["name"],
-                "awayTeam": match["awayTeam"]["name"]
+                "awayTeam": match["awayTeam"]["name"],
             })
-    else:
-        print(f"⚠️ Failed to fetch upcoming matches for {league_name}: {upcoming_resp.status_code}")
+        return records
 
-# Save historical matches
-hist_df = pd.DataFrame(all_historical_matches)
-hist_df["date"] = pd.to_datetime(hist_df["date"])
-hist_df = hist_df.sort_values(["league", "date"])
-hist_df.to_csv(HISTORICAL_FILE, index=False)
-print(f"✅ Saved {len(hist_df)} historical matches to {HISTORICAL_FILE}")
+    def fetch_all_leagues(self, leagues: dict = None, season: int = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+        leagues = leagues or CONFIG.leagues
+        season = season or CONFIG.season
+        all_historical = []
+        all_upcoming = []
 
-# Save upcoming matches
-upcoming_df = pd.DataFrame(all_upcoming_matches)
-upcoming_df["utcDate"] = pd.to_datetime(upcoming_df["utcDate"])
-upcoming_df = upcoming_df.sort_values(["league", "utcDate"])
-upcoming_df.to_csv(UPCOMING_FILE, index=False)
-print(f"✅ Saved {len(upcoming_df)} upcoming matches to {UPCOMING_FILE}")
+        for code, name in leagues.items():
+            log.info("Processing %s (%s)", name, code)
+            try:
+                all_historical.extend(self.fetch_historical(code, season))
+                all_upcoming.extend(self.fetch_upcoming(code, season))
+            except Exception as exc:
+                log.warning("Failed to fetch %s: %s", name, exc)
+
+        hist_df = pd.DataFrame(all_historical)
+        upcoming_df = pd.DataFrame(all_upcoming)
+
+        if not hist_df.empty:
+            hist_df["date"] = pd.to_datetime(hist_df["date"])
+            hist_df = hist_df.sort_values(["league", "date"])
+
+        if not upcoming_df.empty:
+            upcoming_df["utcDate"] = pd.to_datetime(upcoming_df["utcDate"])
+            upcoming_df = upcoming_df.sort_values(["league", "utcDate"])
+
+        return hist_df, upcoming_df
+
+
+if __name__ == "__main__":
+    client = FootballDataClient()
+    hist_df, upcoming_df = client.fetch_all_leagues()
+    hist_df.to_csv(CONFIG.historical_file, index=False)
+    upcoming_df.to_csv(CONFIG.upcoming_file, index=False)
+    log.info("Saved %d historical and %d upcoming matches", len(hist_df), len(upcoming_df))
