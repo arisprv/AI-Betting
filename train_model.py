@@ -78,6 +78,10 @@ def train(matches_file: str = MATCHES_FILE, features_file: str = FEATURES_FILE, 
     rf = RandomForestClassifier(n_estimators=200, random_state=CONFIG.random_state, n_jobs=-1)
     gb = GradientBoostingClassifier(n_estimators=200, learning_rate=0.1, max_depth=4, random_state=CONFIG.random_state)
 
+    importances = dict(zip(FEATURE_COLS, rf.feature_importances_))
+    for feat, imp in sorted(importances.items(), key=lambda x: -x[1]):
+        log.info("Feature importance: %-35s %.4f", feat, imp)
+
     for name, clf in [("RandomForest", rf), ("GradientBoosting", gb)]:
         clf.fit(X_train, y_train)
         acc = evaluate_model(clf, X_test, y_test)
