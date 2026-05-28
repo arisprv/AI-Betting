@@ -30,6 +30,7 @@ def _form_score(results: list[int]) -> float:
 
 
 def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> list[dict]:
+    """Compute rolling features for a single team within a league DataFrame."""
     records = []
     team_matches = league_df[
         (league_df["homeTeam"] == team) | (league_df["awayTeam"] == team)
@@ -91,6 +92,7 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
 
 
 def build_features(historical_file: str = HISTORICAL_FILE, window: int = ROLLING_WINDOW) -> pd.DataFrame:
+    """Build the full team feature matrix from a CSV of historical match results."""
     df = pd.read_csv(historical_file)
     df["date"] = pd.to_datetime(df["date"])
     all_records = []
