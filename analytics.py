@@ -1,3 +1,4 @@
+"""Performance analytics for bet tracking — ROI, win rate, breakdowns."""
 import pandas as pd
 from typing import Optional
 from logger import get_logger
@@ -6,6 +7,7 @@ log = get_logger(__name__)
 
 
 def compute_roi(bets: pd.DataFrame) -> Optional[float]:
+    """Return total P&L / total staked, or None if no bets were placed."""
     if bets.empty or "stake" not in bets or "pnl" not in bets:
         return None
     total_staked = bets["stake"].sum()
@@ -13,6 +15,7 @@ def compute_roi(bets: pd.DataFrame) -> Optional[float]:
 
 
 def compute_win_rate(bets: pd.DataFrame) -> Optional[float]:
+    """Return fraction of bets won, or None if no bets were placed."""
     if bets.empty or "won" not in bets:
         return None
     return bets["won"].mean()
