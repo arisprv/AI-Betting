@@ -32,8 +32,11 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
         ga = _goals_against(match, team)
 
         prev = team_matches[team_matches["date"] < match["date"]].tail(window)
+        prev_home = prev[prev["homeTeam"] == team]
+        prev_away = prev[prev["awayTeam"] == team]
         if prev.empty:
             avg_goals = avg_goals_against = win_rate = 0.0
+            home_win_rate = away_win_rate = 0.0
         else:
             prev_gf = [_goals_for(m, team) for _, m in prev.iterrows()]
             prev_ga = [_goals_against(m, team) for _, m in prev.iterrows()]
@@ -41,6 +44,10 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
             avg_goals = sum(prev_gf) / len(prev_gf)
             avg_goals_against = sum(prev_ga) / len(prev_ga)
             win_rate = results.count(1) / len(results)
+            home_results = [_result(_goals_for(m, team), _goals_against(m, team)) for _, m in prev_home.iterrows()]
+            away_results = [_result(_goals_for(m, team), _goals_against(m, team)) for _, m in prev_away.iterrows()]
+            home_win_rate = home_results.count(1) / len(home_results) if home_results else 0.0
+            away_win_rate = away_results.count(1) / len(away_results) if away_results else 0.0
 
         draw_rate = results.count(0) / len(results) if not prev.empty else 0.0
         loss_rate = results.count(-1) / len(results) if not prev.empty else 0.0
@@ -62,6 +69,8 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
             "loss_rate_5": loss_rate,
             "goal_diff_avg_5": goal_diff_avg,
             "clean_sheet_rate_5": clean_sheet_rate,
+            "home_win_rate_5": home_win_rate,
+            "away_win_rate_5": away_win_rate,
         })
 
     return records
