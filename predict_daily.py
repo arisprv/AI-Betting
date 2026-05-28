@@ -1,170 +1,127 @@
 import pandas as pd
-import requests
+import numpy as np
 import joblib
+from config import CONFIG
+from constants import RESULT_LABELS, MIN_CONFIDENCE_THRESHOLD, MIN_VALUE_THRESHOLD
+from bankroll import BankrollManager
+from odds_analyzer import best_odds, expected_value
+from logger import get_logger
 
-# ================= CONFIG =================
-MODEL_FILE = "football_model_v5.pkl"
-TEAM_FEATURES_FILE = "team_features_2025.csv"
-UPCOMING_FILE = "upcoming_matches_2025.csv"
-API_KEY = "ad6045f62362a96a24924113faa405eb"  # The Odds API key
-LEAGUES = {
-    "soccer_epl": "Premier League",
-    "soccer_spain_la_liga": "La Liga",
-    "soccer_italy_serie_a": "Serie A",
-    "soccer_germany_bundesliga": "Bundesliga",
-    "soccer_france_ligue_one": "Ligue 1"
-}
-REGIONS = "uk"
-MARKETS = "h2h"
-# ==========================================
+log = get_logger(__name__)
 
-# Load model and features
-model = joblib.load(MODEL_FILE)
-features_df = pd.read_csv(TEAM_FEATURES_FILE)
-features_df["utcDate"] = pd.to_datetime(features_df["utcDate"])
+FEATURE_COLS = [
+    "home_avg_goals_for_5", "home_avg_goals_against_5", "home_win_rate_5",
+    "away_avg_goals_for_5", "away_avg_goals_against_5", "away_win_rate_5",
+]
 
-# Load upcoming matches
-upcoming = pd.read_csv(UPCOMING_FILE)
-upcoming["utcDate"] = pd.to_datetime(upcoming["utcDate"])
 
-# ---------------- FETCH ODDS ----------------
-all_odds = []
+def load_resources():
+    model = joblib.load(CONFIG.model_file)
+    features_df = pd.read_csv(CONFIG.features_file)
+    features_df["utcDate"] = pd.to_datetime(features_df["utcDate"])
+    upcoming = pd.read_csv(CONFIG.upcoming_file)
+    upcoming["utcDate"] = pd.to_datetime(upcoming["utcDate"])
+    return model, features_df, upcoming
 
-for SPORT in LEAGUES.keys():
-    url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/"
-    params = {"apiKey": API_KEY, "regions": REGIONS, "markets": MARKETS}
-    resp = requests.get(url, params=params)
+
+def fetch_odds_df() -> pd.DataFrame:
+    from fetch_odds import fetch_all_odds
+    return fetch_all_odds()
+
+
+def build_feature_row(home: str, away: str, match_date, features_df: pd.DataFrame):
+    home_s = features_df[
+        (features_df["team"] == home) & (features_df["utcDate"] < match_date) & features_df["is_home"]
+    ].sort_values("utcDate").tail(1)
+    away_s = features_df[
+        (features_df["team"] == away) & (features_df["utcDate"] < match_date) & ~features_df["is_home"]
+    ].sort_values("utcDate").tail(1)
+
+    if home_s.empty or away_s.empty:
+        return None
+
     try:
-        data = resp.json()
-        print(data)
-    except Exception as e:
-        print(f"⚠️ Error fetching odds for {SPORT}: {e}")
-        continue
-
-    for match in data:
-        home_team = match["home_team"]  # use the exact column name from your CSV
-        away_team = match["away_team"]
-        for bookmaker in match.get("bookmakers", []):
-            if not bookmaker.get("markets"):
-                continue
-            outcomes = bookmaker["markets"][0]["outcomes"]
-            odds_dict = {o["name"]: o["price"] for o in outcomes}
-            all_odds.append({
-                "league": SPORT,
-                "home_team": home_team,
-                "away_team": away_team,
-                "bookmaker": bookmaker["title"],
-                "home_odds": odds_dict.get(home_team),
-                "draw_odds": odds_dict.get("Draw"),
-                "away_odds": odds_dict.get(away_team)
-            })
-
-odds_df = pd.DataFrame(all_odds)
+        vals = [
+            home_s["avg_goals_5"].values[0], home_s["avg_goals_against_5"].values[0], home_s["win_rate_5"].values[0],
+            away_s["avg_goals_5"].values[0], away_s["avg_goals_against_5"].values[0], away_s["win_rate_5"].values[0],
+        ]
+    except KeyError:
+        return None
+    return pd.DataFrame([vals], columns=FEATURE_COLS)
 
 
-# ----------- HELPER FUNCTIONS -------------
-def find_odds_row(odds_df, home, away):
-    """Safe lookup for odds, ignoring FC/AFC"""
-
-    def clean(name):
-        if not isinstance(name, str):
-            return ""
-        return name.replace("FC", "").replace("AFC", "").strip()
-
-    row = odds_df[(odds_df["home_team"] == home) & (odds_df["away_team"] == away)]
-    if not row.empty:
-        return row.iloc[0]
-    # Try partial match
-    row = odds_df[(odds_df["home_team"].apply(clean) == clean(home)) &
-                  (odds_df["away_team"].apply(clean) == clean(away))]
-    if not row.empty:
-        return row.iloc[0]
-    return None
+def predict_match(model, feature_row: pd.DataFrame) -> tuple[str, float, np.ndarray]:
+    proba = model.predict_proba(feature_row)[0]
+    classes = model.classes_
+    pred_idx = int(np.argmax(proba))
+    pred_class = classes[pred_idx]
+    pred_prob = float(proba[pred_idx])
+    pred_label = RESULT_LABELS.get(pred_class, str(pred_class))
+    return pred_label, pred_prob, proba
 
 
-# ----------- PREDICTIONS & VALUE BETS -------------
-predictions = []
-value_bets = []
+def run_predictions(odds_df: pd.DataFrame = None):
+    model, features_df, upcoming = load_resources()
+    if odds_df is None:
+        try:
+            odds_df = fetch_odds_df()
+        except Exception as exc:
+            log.warning("Could not fetch odds: %s", exc)
+            odds_df = pd.DataFrame()
 
-for _, match in upcoming.iterrows():
-    home = match["homeTeam"]
-    away = match["awayTeam"]
-    match_date = match["utcDate"]
+    bankroll = BankrollManager()
+    predictions, value_bets = [], []
 
-    # Skip if team stats missing
-    home_stats = features_df[
-        (features_df["team"] == home) & (features_df["utcDate"] < match_date) & (features_df["is_home"] == True)]
-    away_stats = features_df[
-        (features_df["team"] == away) & (features_df["utcDate"] < match_date) & (features_df["is_home"] == False)]
-    if home_stats.empty or away_stats.empty:
-        print(f"⚠️ Skipping {home} vs {away} (missing team stats)")
-        continue
+    for _, match in upcoming.iterrows():
+        home, away, date = match["homeTeam"], match["awayTeam"], match["utcDate"]
+        feature_row = build_feature_row(home, away, date, features_df)
+        if feature_row is None:
+            log.debug("Skipping %s vs %s — missing stats", home, away)
+            continue
 
-    # Take latest stats
-    home_latest = home_stats.sort_values("utcDate").iloc[-1]
-    away_latest = away_stats.sort_values("utcDate").iloc[-1]
+        pred_label, pred_prob, proba = predict_match(model, feature_row)
+        predictions.append({"match": f"{home} vs {away}", "prediction": pred_label, "confidence": round(pred_prob, 3)})
 
-    # Prepare features for model
-    feature_row = pd.DataFrame([[
-        home_latest["avg_goals_5"],
-        home_latest["avg_goals_against_5"],
-        home_latest["win_rate_5"],
-        away_latest["avg_goals_5"],
-        away_latest["avg_goals_against_5"],
-        away_latest["win_rate_5"]
-    ]], columns=[
-        "home_avg_goals_for_5", "home_avg_goals_against_5", "home_win_rate_5",
-        "away_avg_goals_for_5", "away_avg_goals_against_5", "away_win_rate_5"
-    ])
+        if pred_prob < MIN_CONFIDENCE_THRESHOLD:
+            continue
 
-    # Predict outcome
-    pred_class = model.predict(feature_row)[0]
-    pred_prob = max(model.predict_proba(feature_row)[0])
-    label_map = {1: "Home Win", 0: "Draw", -1: "Away Win"}
-    pred_label = label_map[pred_class]
+        bet_odds = best_odds(odds_df, home, away, pred_label) if not odds_df.empty else None
+        if bet_odds is None:
+            continue
 
-    predictions.append({
-        "match": f"{home} vs {away}",
-        "prediction": pred_label,
-        "confidence": round(pred_prob, 2)
-    })
+        ev = expected_value(pred_prob, bet_odds)
+        if ev < MIN_VALUE_THRESHOLD:
+            continue
 
-    # Find odds
-    odds_row = find_odds_row(odds_df, home, away)
-    if odds_row is None:
-        # print(f"⚠️ Odds not found for {home} vs {away}")
-        continue
-
-    # Calculate implied probabilities
-    implied_probs = {
-        "Home Win": 1 / odds_row["home_odds"] if odds_row["home_odds"] else 0,
-        "Draw": 1 / odds_row["draw_odds"] if odds_row["draw_odds"] else 0,
-        "Away Win": 1 / odds_row["away_odds"] if odds_row["away_odds"] else 0
-    }
-    total = sum(implied_probs.values())
-    for k in implied_probs:
-        implied_probs[k] /= total if total > 0 else 1
-
-    # Check for value bet
-    if pred_prob > implied_probs[pred_label]:
+        stake = bankroll.kelly_stake(pred_prob, bet_odds)
         value_bets.append({
             "match": f"{home} vs {away}",
             "prediction": pred_label,
-            "model_prob": pred_prob,
-            "implied_prob": implied_probs[pred_label],
-            "bookmaker": odds_row["bookmaker"]
+            "model_prob": round(pred_prob, 3),
+            "odds": bet_odds,
+            "ev": round(ev, 3),
+            "stake": stake,
         })
 
-# ----------- OUTPUT -------------
-print("\n🏆 Predictions for Upcoming Matches:\n")
-for p in predictions:
-    print(f"{p['match']:40} → {p['prediction']:10} ({p['confidence'] * 100:.1f}% confidence)")
+    _print_predictions(predictions)
+    _print_value_bets(value_bets)
 
-print("\n💰 Value Bets:\n")
-for vb in value_bets:
-    print(
-        f"{vb['match']:40} → {vb['prediction']:10} | Model: {vb['model_prob'] * 100:.1f}% > Odds: {vb['implied_prob'] * 100:.1f}% ({vb['bookmaker']})")
+    pd.DataFrame(predictions).to_csv(CONFIG.predictions_file, index=False)
+    pd.DataFrame(value_bets).to_csv(CONFIG.value_bets_file, index=False)
+    log.info("Saved %d predictions and %d value bets", len(predictions), len(value_bets))
 
-# Save CSVs
-pd.DataFrame(predictions).to_csv("predictions_multileague_2025.csv", index=False)
-pd.DataFrame(value_bets).to_csv("value_bets_multileague_2025.csv", index=False)
+
+def _print_predictions(predictions: list[dict]) -> None:
+    print("\n🏆 Predictions for Upcoming Matches:\n")
+    for p in predictions:
+        print(f"{p['match']:40} → {p['prediction']:10} ({p['confidence'] * 100:.1f}%)")
+
+
+def _print_value_bets(value_bets: list[dict]) -> None:
+    print("\n💰 Value Bets:\n")
+    for vb in value_bets:
+        print(f"{vb['match']:40} → {vb['prediction']:10} | EV: {vb['ev']:+.3f} | Odds: {vb['odds']:.2f} | Stake: £{vb['stake']:.2f}")
+
+
+if __name__ == "__main__":
+    run_predictions()
