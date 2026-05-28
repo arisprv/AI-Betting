@@ -1,3 +1,4 @@
+"""Odds analysis utilities: EV calculation, value bet detection, and best-odds lookup."""
 import pandas as pd
 from typing import Optional
 from team_name_normalizer import find_best_match
@@ -7,6 +8,7 @@ log = get_logger(__name__)
 
 
 def normalize_overround(odds_dict: dict[str, float]) -> dict[str, float]:
+    """Convert raw odds dict to true probability dict by removing bookmaker margin."""
     total_implied = sum(1 / v for v in odds_dict.values() if v and v > 0)
     if total_implied == 0:
         return odds_dict
