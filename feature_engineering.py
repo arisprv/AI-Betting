@@ -20,6 +20,15 @@ def _result(gf: int, ga: int) -> int:
     return 1 if gf > ga else 0 if gf == ga else -1
 
 
+def _form_score(results: list[int]) -> float:
+    """Exponentially weighted form: recent results count more."""
+    if not results:
+        return 0.0
+    weights = [2 ** i for i in range(len(results))]
+    weighted = sum(w * r for w, r in zip(weights, results))
+    return weighted / sum(weights)
+
+
 def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> list[dict]:
     records = []
     team_matches = league_df[
@@ -36,7 +45,7 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
         prev_away = prev[prev["awayTeam"] == team]
         if prev.empty:
             avg_goals = avg_goals_against = win_rate = 0.0
-            home_win_rate = away_win_rate = 0.0
+            home_win_rate = away_win_rate = form = 0.0
         else:
             prev_gf = [_goals_for(m, team) for _, m in prev.iterrows()]
             prev_ga = [_goals_against(m, team) for _, m in prev.iterrows()]
@@ -48,6 +57,7 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
             away_results = [_result(_goals_for(m, team), _goals_against(m, team)) for _, m in prev_away.iterrows()]
             home_win_rate = home_results.count(1) / len(home_results) if home_results else 0.0
             away_win_rate = away_results.count(1) / len(away_results) if away_results else 0.0
+            form = _form_score(results)
 
         draw_rate = results.count(0) / len(results) if not prev.empty else 0.0
         loss_rate = results.count(-1) / len(results) if not prev.empty else 0.0
@@ -71,6 +81,7 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
             "clean_sheet_rate_5": clean_sheet_rate,
             "home_win_rate_5": home_win_rate,
             "away_win_rate_5": away_win_rate,
+            "form_score_5": form,
         })
 
     return records
