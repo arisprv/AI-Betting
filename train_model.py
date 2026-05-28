@@ -1,67 +1,92 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+import numpy as np
 import joblib
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.calibration import CalibratedClassifierCV
+from config import CONFIG
+from constants import RESULT_HOME_WIN, RESULT_DRAW, RESULT_AWAY_WIN
+from logger import get_logger
 
-# === CONFIG ===
-FEATURES_FILE = "team_features_PL_2025_v5.csv"
-MATCHES_FILE = "matches_PL_2025.csv"
-MODEL_FILE = "football_model_v5.pkl"
+log = get_logger(__name__)
 
-# Load historical matches
-matches = pd.read_csv(MATCHES_FILE)
-matches = matches[matches["status"] == "FINISHED"].copy()
-matches["utcDate"] = pd.to_datetime(matches["utcDate"])
-matches["result"] = matches.apply(lambda r: 1 if r["homeScore"] > r["awayScore"]
-                                 else (-1 if r["homeScore"] < r["awayScore"] else 0), axis=1)
+FEATURES_FILE = CONFIG.features_file
+MATCHES_FILE = CONFIG.historical_file
+MODEL_FILE = CONFIG.model_file
 
-# Load features
-features = pd.read_csv(FEATURES_FILE)
-features["utcDate"] = pd.to_datetime(features["utcDate"])
+FEATURE_COLS = [
+    "home_avg_goals_for_5", "home_avg_goals_against_5", "home_win_rate_5",
+    "away_avg_goals_for_5", "away_avg_goals_against_5", "away_win_rate_5",
+]
 
-X_list = []
-y_list = []
 
-for _, match in matches.iterrows():
-    home = match["homeTeam"]
-    away = match["awayTeam"]
-    date = match["utcDate"]
+def load_data(matches_file: str, features_file: str):
+    matches = pd.read_csv(matches_file)
+    matches = matches[matches["status"] == "FINISHED"].copy()
+    matches["utcDate"] = pd.to_datetime(matches["utcDate"])
+    matches["result"] = matches.apply(
+        lambda r: RESULT_HOME_WIN if r["homeScore"] > r["awayScore"]
+        else (RESULT_AWAY_WIN if r["homeScore"] < r["awayScore"] else RESULT_DRAW),
+        axis=1,
+    )
+    features = pd.read_csv(features_file)
+    features["utcDate"] = pd.to_datetime(features["utcDate"])
+    return matches, features
 
-    home_stats = features[(features["team"]==home) & (features["utcDate"] < date) & (features["is_home"]==True)].sort_values("utcDate").tail(1)
-    away_stats = features[(features["team"]==away) & (features["utcDate"] < date) & (features["is_home"]==False)].sort_values("utcDate").tail(1)
 
-    if home_stats.empty or away_stats.empty:
-        continue
+def build_training_set(matches: pd.DataFrame, features: pd.DataFrame):
+    X_rows, y_rows = [], []
+    for _, match in matches.iterrows():
+        home, away, date = match["homeTeam"], match["awayTeam"], match["utcDate"]
+        home_s = features[(features["team"] == home) & (features["utcDate"] < date) & features["is_home"]].sort_values("utcDate").tail(1)
+        away_s = features[(features["team"] == away) & (features["utcDate"] < date) & ~features["is_home"]].sort_values("utcDate").tail(1)
+        if home_s.empty or away_s.empty:
+            continue
+        X_rows.append([
+            home_s["avg_goals_5"].values[0], home_s["avg_goals_against_5"].values[0], home_s["win_rate_5"].values[0],
+            away_s["avg_goals_5"].values[0], away_s["avg_goals_against_5"].values[0], away_s["win_rate_5"].values[0],
+        ])
+        y_rows.append(match["result"])
+    return pd.DataFrame(X_rows, columns=FEATURE_COLS), pd.Series(y_rows)
 
-    X_list.append([
-        home_stats["avg_goals_for_5"].values[0],
-        home_stats["avg_goals_against_5"].values[0],
-        home_stats["win_rate_5"].values[0],
-        away_stats["avg_goals_for_5"].values[0],
-        away_stats["avg_goals_against_5"].values[0],
-        away_stats["win_rate_5"].values[0]
-    ])
-    y_list.append(match["result"])
 
-X = pd.DataFrame(X_list, columns=[
-    "home_avg_goals_for_5","home_avg_goals_against_5","home_win_rate_5",
-    "away_avg_goals_for_5","away_avg_goals_against_5","away_win_rate_5"
-])
-y = pd.Series(y_list)
+def evaluate_model(model, X_test: pd.DataFrame, y_test: pd.Series) -> float:
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    log.info("Accuracy: %.3f", acc)
+    log.info("Classification report:\n%s", classification_report(y_test, y_pred))
+    return acc
 
-# Split train/test
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
 
-# Train model
-model = RandomForestClassifier(n_estimators=200, random_state=42)
-model.fit(X_train, y_train)
+def cross_validate_model(model, X: pd.DataFrame, y: pd.Series, cv: int = 5) -> np.ndarray:
+    skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=CONFIG.random_state)
+    scores = cross_val_score(model, X, y, cv=skf, scoring="accuracy")
+    log.info("CV accuracy: %.3f ± %.3f", scores.mean(), scores.std())
+    return scores
 
-# Evaluate
-y_pred = model.predict(X_test)
-print("✅ Model accuracy:", round(accuracy_score(y_test, y_pred), 3))
-print("\nClassification Report:\n", classification_report(y_test, y_pred))
 
-# Save model
-joblib.dump(model, MODEL_FILE)
-print(f"💾 Model saved as {MODEL_FILE}")
+def train(matches_file: str = MATCHES_FILE, features_file: str = FEATURES_FILE, model_file: str = MODEL_FILE):
+    matches, features = load_data(matches_file, features_file)
+    X, y = build_training_set(matches, features)
+    log.info("Training set: %d samples, %d features", len(X), X.shape[1])
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=CONFIG.test_size, random_state=CONFIG.random_state, stratify=y
+    )
+
+    rf = RandomForestClassifier(n_estimators=200, random_state=CONFIG.random_state, n_jobs=-1)
+    rf.fit(X_train, y_train)
+    cv_scores = cross_validate_model(rf, X, y)
+    evaluate_model(rf, X_test, y_test)
+
+    model = CalibratedClassifierCV(rf, cv=3, method="isotonic")
+    model.fit(X_train, y_train)
+
+    joblib.dump(model, model_file)
+    log.info("Model saved to %s", model_file)
+    return model
+
+
+if __name__ == "__main__":
+    train()
