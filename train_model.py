@@ -76,9 +76,14 @@ def train(matches_file: str = MATCHES_FILE, features_file: str = FEATURES_FILE, 
     )
 
     rf = RandomForestClassifier(n_estimators=200, random_state=CONFIG.random_state, n_jobs=-1)
-    rf.fit(X_train, y_train)
+    gb = GradientBoostingClassifier(n_estimators=200, learning_rate=0.1, max_depth=4, random_state=CONFIG.random_state)
+
+    for name, clf in [("RandomForest", rf), ("GradientBoosting", gb)]:
+        clf.fit(X_train, y_train)
+        acc = evaluate_model(clf, X_test, y_test)
+        log.info("%s test accuracy: %.3f", name, acc)
+
     cv_scores = cross_validate_model(rf, X, y)
-    evaluate_model(rf, X_test, y_test)
 
     model = CalibratedClassifierCV(rf, cv=3, method="isotonic")
     model.fit(X_train, y_train)
