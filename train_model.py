@@ -21,7 +21,8 @@ FEATURE_COLS = [
 ]
 
 
-def load_data(matches_file: str, features_file: str):
+def load_data(matches_file: str, features_file: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load finished matches and feature CSV files, adding a result column."""
     matches = pd.read_csv(matches_file)
     matches = matches[matches["status"] == "FINISHED"].copy()
     matches["utcDate"] = pd.to_datetime(matches["utcDate"])
@@ -35,7 +36,8 @@ def load_data(matches_file: str, features_file: str):
     return matches, features
 
 
-def build_training_set(matches: pd.DataFrame, features: pd.DataFrame):
+def build_training_set(matches: pd.DataFrame, features: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    """Join matches with pre-match team features to form (X, y) training pairs."""
     X_rows, y_rows = [], []
     for _, match in matches.iterrows():
         home, away, date = match["homeTeam"], match["awayTeam"], match["utcDate"]
