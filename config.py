@@ -1,11 +1,12 @@
+import os
 from dataclasses import dataclass, field
 from typing import Dict
 
 
 @dataclass
 class Config:
-    football_api_token: str = "55232aed707e498c914f70d4cf2f40c3"
-    odds_api_key: str = "ad6045f62362a96a24924113faa405eb"
+    football_api_token: str = os.getenv("FOOTBALL_API_TOKEN", "55232aed707e498c914f70d4cf2f40c3")
+    odds_api_key: str = os.getenv("ODDS_API_KEY", "ad6045f62362a96a24924113faa405eb")
     season: int = 2025
     rolling_window: int = 5
     test_size: float = 0.25
