@@ -1,3 +1,4 @@
+"""Historical backtesting engine — simulates a betting strategy on past matches."""
 import pandas as pd
 import numpy as np
 from bankroll import BankrollManager
@@ -7,7 +8,7 @@ from logger import get_logger
 log = get_logger(__name__)
 
 
-def run_backtest(
+def run_backtest(  # noqa: PLR0913
     matches: pd.DataFrame,
     features: pd.DataFrame,
     model,
