@@ -17,6 +17,28 @@ class FootballDataClient:
         data = self.client.get(f"competitions/{league_code}/matches", params={"season": season, "status": status})
         return data.get("matches", [])
 
+    def fetch_standings(self, league_code: str, season: int) -> list[dict]:
+        log.info("Fetching standings for %s season %d", league_code, season)
+        data = self.client.get(f"competitions/{league_code}/standings", params={"season": season})
+        standings = []
+        for table in data.get("standings", []):
+            if table.get("type") == "TOTAL":
+                for entry in table.get("table", []):
+                    standings.append({
+                        "league": league_code,
+                        "season": season,
+                        "position": entry["position"],
+                        "team": entry["team"]["name"],
+                        "played": entry["playedGames"],
+                        "won": entry["won"],
+                        "draw": entry["draw"],
+                        "lost": entry["lost"],
+                        "goals_for": entry["goalsFor"],
+                        "goals_against": entry["goalsAgainst"],
+                        "points": entry["points"],
+                    })
+        return standings
+
     def fetch_historical(self, league_code: str, season: int) -> list[dict]:
         matches = self.fetch_matches(league_code, season, STATUS_FINISHED)
         records = []
