@@ -14,8 +14,14 @@ class APIClient:
         if headers:
             self.session.headers.update(headers)
 
-    def get(self, path: str, params: dict = None) -> dict:
+    def get(self, path: str, params: dict = None, use_cache: bool = False) -> dict:
         url = f"{self.base_url}/{path.lstrip('/')}"
+        if use_cache:
+            from data_cache import get_cached, set_cached
+            cached = get_cached(url, params)
+            if cached is not None:
+                log.debug("Cache hit for %s", url)
+                return cached
         for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
             try:
                 resp = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
@@ -26,7 +32,11 @@ class APIClient:
                     continue
                 if not resp.ok:
                     raise APIError(f"HTTP {resp.status_code} for {url}", status_code=resp.status_code)
-                return resp.json()
+                result = resp.json()
+                if use_cache:
+                    from data_cache import set_cached
+                    set_cached(url, result, params)
+                return result
             except requests.RequestException as exc:
                 if attempt == MAX_RETRY_ATTEMPTS:
                     raise APIError(str(exc)) from exc
