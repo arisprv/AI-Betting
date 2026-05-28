@@ -64,6 +64,8 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
         goal_diff_avg = (avg_goals - avg_goals_against) if not prev.empty else 0.0
         clean_sheets = sum(1 for g in (prev_ga if not prev.empty else []) if g == 0)
         clean_sheet_rate = clean_sheets / len(prev) if not prev.empty else 0.0
+        scored_in_both = sum(1 for f, a in zip(prev_gf if not prev.empty else [], prev_ga if not prev.empty else []) if f > 0 and a > 0)
+        btts_rate = scored_in_both / len(prev) if not prev.empty else 0.0
 
         records.append({
             "league": match["league"],
@@ -82,6 +84,7 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
             "home_win_rate_5": home_win_rate,
             "away_win_rate_5": away_win_rate,
             "form_score_5": form,
+            "btts_rate_5": btts_rate,
         })
 
     return records
