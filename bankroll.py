@@ -14,7 +14,7 @@ class BankrollManager:
         self.current_capital = self.initial_capital
 
     def kelly_stake(self, prob: float, odds: float) -> float:
-        """Fractional Kelly criterion stake."""
+        """Return a stake sized by fractional Kelly criterion, capped at 10% of capital."""
         edge = prob * odds - 1
         if edge <= 0 or odds <= 1:
             return 0.0
@@ -23,6 +23,7 @@ class BankrollManager:
         return round(min(stake, self.current_capital * 0.1), 2)
 
     def record_bet(self, match: str, prediction: str, stake: float, odds: float, won: bool) -> float:
+        """Record a settled bet, update capital, and return the P&L."""
         pnl = stake * (odds - 1) if won else -stake
         self.current_capital += pnl
         self.history.append({
