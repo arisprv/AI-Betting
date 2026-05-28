@@ -1,4 +1,5 @@
 import pandas as pd
+from typing import Optional
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -9,10 +10,12 @@ ROLLING_WINDOW = 5
 
 
 def _goals_for(match: pd.Series, team: str) -> int:
+    """Return goals scored by team in the given match row."""
     return match["homeScore"] if match["homeTeam"] == team else match["awayScore"]
 
 
 def _goals_against(match: pd.Series, team: str) -> int:
+    """Return goals conceded by team in the given match row."""
     return match["awayScore"] if match["homeTeam"] == team else match["homeScore"]
 
 
