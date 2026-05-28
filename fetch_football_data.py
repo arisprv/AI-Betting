@@ -65,6 +65,15 @@ class FootballDataClient:
             })
         return records
 
+    def fetch_multi_season(self, league_code: str, seasons: list[int]) -> pd.DataFrame:
+        all_records = []
+        for season in seasons:
+            try:
+                all_records.extend(self.fetch_historical(league_code, season))
+            except Exception as exc:
+                log.warning("Failed to fetch %s season %d: %s", league_code, season, exc)
+        return pd.DataFrame(all_records)
+
     def fetch_all_leagues(self, leagues: dict = None, season: int = None) -> tuple[pd.DataFrame, pd.DataFrame]:
         leagues = leagues or CONFIG.leagues
         season = season or CONFIG.season
