@@ -112,9 +112,10 @@ def run_predictions(odds_df: pd.DataFrame = None):
 
 
 def _print_predictions(predictions: list[dict]) -> None:
-    print("\n🏆 Predictions for Upcoming Matches:\n")
+    print("\n=== Predictions for Upcoming Matches ===\n")
     for p in predictions:
-        print(f"{p['match']:40} → {p['prediction']:10} ({p['confidence'] * 100:.1f}%)")
+        conf_bar = "#" * int(p["confidence"] * 20)
+        print(f"{p['match']:40} -> {p['prediction']:10} ({p['confidence'] * 100:.1f}%) [{conf_bar:<20}]")
 
 
 def _print_value_bets(value_bets: list[dict]) -> None:
