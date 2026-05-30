@@ -36,6 +36,12 @@ def outcome_probs(home_lambda: float, away_lambda: float) -> dict[str, float]:
     return result
 
 
+def most_likely_scoreline(home_lambda: float, away_lambda: float) -> tuple[int, int]:
+    """Return the most likely (home_goals, away_goals) scoreline."""
+    probs = score_probabilities(home_lambda, away_lambda)
+    return max(probs, key=probs.get)
+
+
 def estimate_lambda(avg_goals_scored: float, avg_goals_conceded: float,
                     league_avg_home: float = 1.5, league_avg_away: float = 1.2) -> float:
     """Estimate expected goals using attack/defence strengths."""
