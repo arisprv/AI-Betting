@@ -62,5 +62,12 @@ def run_backtest(  # noqa: PLR0913
             "balance": bankroll.current_capital,
         })
 
-    log.info("Backtest complete: %d bets, final balance %.2f (started %.2f)", len(bet_records), bankroll.current_capital, initial_capital)
+    total_staked = sum(b["stake"] for b in bet_records)
+    total_pnl = sum(b["pnl"] for b in bet_records if "pnl" in b)
+    roi = total_pnl / total_staked if total_staked > 0 else 0.0
+    log.info(
+        "Backtest: %d bets | balance %.2f (start %.2f) | ROI %.1f%% | win rate %.1f%%",
+        len(bet_records), bankroll.current_capital, initial_capital,
+        roi * 100, (bankroll.win_rate or 0) * 100,
+    )
     return bankroll, pd.DataFrame(bet_records)
