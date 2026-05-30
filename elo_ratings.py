@@ -1,6 +1,10 @@
-"""Simple Elo rating system for football teams."""
+"""
+Simple Elo rating system for football teams.
+Based on the classic Elo formulation with a home advantage adjustment.
+"""
 import math
 from collections import defaultdict
+from typing import Optional
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -31,6 +35,11 @@ def update_ratings(rating_home: float, rating_away: float, home_score: int, away
     new_home = rating_home + K_FACTOR * (actual_home - expected_home)
     new_away = rating_away + K_FACTOR * (actual_away - expected_away)
     return new_home, new_away
+
+
+def rating_diff_to_prob(home_rating: float, away_rating: float) -> float:
+    """Convert Elo rating difference to win probability for the home team."""
+    return expected_score(home_rating + HOME_ADVANTAGE, away_rating)
 
 
 def build_elo_ratings(matches, default_rating: float = DEFAULT_RATING) -> dict[str, float]:
