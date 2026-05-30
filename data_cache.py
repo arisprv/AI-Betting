@@ -1,4 +1,7 @@
-"""Simple disk-based cache for API responses to avoid redundant requests."""
+"""
+Disk-based cache for API responses to avoid redundant requests.
+Cache entries expire after DEFAULT_TTL_HOURS and are stored as JSON files.
+"""
 import json
 import hashlib
 from pathlib import Path
@@ -18,6 +21,16 @@ def _cache_key(url: str, params: dict) -> str:
 
 def _cache_path(key: str) -> Path:
     return Path(CACHE_DIR) / f"{key}.json"
+
+
+def cache_stats() -> dict:
+    """Return count and total size of cached files."""
+    cache_dir = Path(CACHE_DIR)
+    if not cache_dir.exists():
+        return {"count": 0, "size_bytes": 0}
+    files = list(cache_dir.glob("*.json"))
+    total_size = sum(f.stat().st_size for f in files)
+    return {"count": len(files), "size_bytes": total_size}
 
 
 def get_cached(url: str, params: dict = None, ttl_hours: int = DEFAULT_TTL_HOURS):
