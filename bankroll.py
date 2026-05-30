@@ -50,3 +50,33 @@ class BankrollManager:
         if not self.history:
             return None
         return sum(1 for b in self.history if b["won"]) / len(self.history)
+
+    @property
+    def max_drawdown(self) -> float:
+        """Maximum peak-to-trough drawdown fraction of bankroll."""
+        if not self.history:
+            return 0.0
+        balances = [b["balance"] for b in self.history]
+        peak = self.initial_capital
+        max_dd = 0.0
+        for b in balances:
+            peak = max(peak, b)
+            dd = (peak - b) / peak if peak > 0 else 0.0
+            max_dd = max(max_dd, dd)
+        return round(max_dd, 4)
+
+    @property
+    def profit(self) -> float:
+        return round(self.current_capital - self.initial_capital, 2)
+
+    def summary(self) -> dict:
+        """Return a summary dict of bankroll performance."""
+        return {
+            "initial": self.initial_capital,
+            "current": round(self.current_capital, 2),
+            "profit": self.profit,
+            "bets": len(self.history),
+            "roi": round(self.roi or 0, 4),
+            "win_rate": round(self.win_rate or 0, 4),
+            "max_drawdown": self.max_drawdown,
+        }
