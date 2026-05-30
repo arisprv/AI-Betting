@@ -47,3 +47,18 @@ def save_report(bets: pd.DataFrame, output_file: str = "performance_report.txt")
     with open(output_file, "w") as f:
         f.write(report)
     log.info("Report saved to %s", output_file)
+
+
+def save_json_report(bets: pd.DataFrame, output_file: str = "performance_report.json") -> None:
+    """Save a machine-readable JSON version of the performance report."""
+    import json
+    from analytics import compute_roi, compute_win_rate, by_league, by_prediction
+    data = {
+        "total_bets": len(bets),
+        "total_pnl": round(bets["pnl"].sum(), 2) if "pnl" in bets else 0,
+        "roi": round((compute_roi(bets) or 0), 4),
+        "win_rate": round((compute_win_rate(bets) or 0), 4),
+    }
+    with open(output_file, "w") as f:
+        json.dump(data, f, indent=2, default=str)
+    log.info("JSON report saved to %s", output_file)
