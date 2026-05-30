@@ -59,6 +59,34 @@ def monthly_summary(bets: pd.DataFrame) -> pd.DataFrame:
     ).assign(roi=lambda df: df["total_pnl"] / df["total_staked"])
 
 
+def sharpe_ratio_bets(bets: pd.DataFrame) -> Optional[float]:
+    """Return Sharpe ratio of per-bet returns (pnl / stake)."""
+    if bets.empty or "pnl" not in bets or "stake" not in bets:
+        return None
+    returns = (bets["pnl"] / bets["stake"].replace(0, 1)).tolist()
+    if len(returns) < 2:
+        return None
+    import math
+    mean = sum(returns) / len(returns)
+    variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+    std = math.sqrt(variance)
+    return (mean / std) if std > 0 else None
+
+
+def max_drawdown_bets(bets: pd.DataFrame) -> float:
+    """Return maximum peak-to-trough drawdown of running balance."""
+    if bets.empty or "balance" not in bets:
+        return 0.0
+    balances = bets["balance"].tolist()
+    peak = balances[0]
+    max_dd = 0.0
+    for b in balances:
+        peak = max(peak, b)
+        dd = (peak - b) / peak if peak > 0 else 0.0
+        max_dd = max(max_dd, dd)
+    return round(max_dd, 4)
+
+
 def print_summary(bets: pd.DataFrame) -> None:
     roi = compute_roi(bets)
     wr = compute_win_rate(bets)
@@ -68,3 +96,6 @@ def print_summary(bets: pd.DataFrame) -> None:
     log.info("Total P&L:   %.2f", total_pnl)
     log.info("ROI:         %.1f%%", (roi or 0) * 100)
     log.info("Win rate:    %.1f%%", (wr or 0) * 100)
+    log.info("Max DD:      %.1f%%", max_drawdown_bets(bets) * 100)
+    sr = sharpe_ratio_bets(bets)
+    log.info("Sharpe:      %s", f"{sr:.3f}" if sr is not None else "N/A")
