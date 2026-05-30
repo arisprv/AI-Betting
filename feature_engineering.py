@@ -63,6 +63,10 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
             away_win_rate = away_results.count(1) / len(away_results) if away_results else 0.0
             form = _form_score(results)
 
+        long_window_prev = team_matches[team_matches["date"] < match["date"]].tail(10)
+        lw_gf = [_goals_for(m, team) for _, m in long_window_prev.iterrows()] if not long_window_prev.empty else []
+        avg_goals_10 = sum(lw_gf) / len(lw_gf) if lw_gf else 0.0
+
         draw_rate = results.count(0) / len(results) if not prev.empty else 0.0
         loss_rate = results.count(-1) / len(results) if not prev.empty else 0.0
         goal_diff_avg = (avg_goals - avg_goals_against) if not prev.empty else 0.0
@@ -89,6 +93,7 @@ def compute_team_features(league_df: pd.DataFrame, team: str, window: int) -> li
             "away_win_rate_5": away_win_rate,
             "form_score_5": form,
             "btts_rate_5": btts_rate,
+            "avg_goals_10": avg_goals_10,
         })
 
     return records
