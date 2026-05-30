@@ -1,4 +1,7 @@
-"""Feature selection utilities to remove low-importance and correlated features."""
+"""
+Feature selection utilities.
+Applies importance-based filtering then correlation-based deduplication.
+"""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -30,6 +33,16 @@ def correlation_filter(X: pd.DataFrame, threshold: float = 0.95) -> list[str]:
     selected = [c for c in X.columns if c not in to_drop]
     if to_drop:
         log.info("Correlation filter dropped %d features: %s", len(to_drop), to_drop)
+    return selected
+
+
+def variance_filter(X: pd.DataFrame, threshold: float = 0.001) -> list[str]:
+    """Remove features with near-zero variance."""
+    variances = X.var()
+    selected = variances[variances > threshold].index.tolist()
+    dropped = [c for c in X.columns if c not in selected]
+    if dropped:
+        log.info("Variance filter dropped %d features: %s", len(dropped), dropped)
     return selected
 
 
