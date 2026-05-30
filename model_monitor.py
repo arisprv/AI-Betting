@@ -1,3 +1,4 @@
+"""Model monitoring: detect drift, track rolling accuracy, and measure calibration."""
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score
@@ -34,6 +35,22 @@ def calibration_error(model_probs: np.ndarray, actual: np.ndarray, n_bins: int =
         avg_outcome = actual[mask].mean()
         ece += mask.mean() * abs(avg_prob - avg_outcome)
     return float(ece)
+
+
+def accuracy_trend(predictions: pd.DataFrame, window: int = 20) -> str:
+    """Return 'improving', 'declining', or 'stable' based on rolling accuracy trend."""
+    if "correct" not in predictions:
+        predictions = predictions.copy()
+        predictions["correct"] = predictions["prediction"] == predictions["actual"]
+    rolling = predictions["correct"].rolling(window=window, min_periods=5).mean().dropna()
+    if len(rolling) < 2:
+        return "stable"
+    slope = float(np.polyfit(range(len(rolling)), rolling, 1)[0])
+    if slope > 0.01:
+        return "improving"
+    elif slope < -0.01:
+        return "declining"
+    return "stable"
 
 
 def monitor_model(predictions: pd.DataFrame, baseline_accuracy: float, window: int = 30) -> dict:
