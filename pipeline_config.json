@@ -1,0 +1,16 @@
+{
+  "season": 2025,
+  "rolling_window": 5,
+  "model_type": "rf",
+  "n_estimators": 200,
+  "test_size": 0.25,
+  "confidence_threshold": 0.55,
+  "min_value_threshold": 0.02,
+  "kelly_fraction": 0.25,
+  "initial_bankroll": 1000.0,
+  "leagues": ["PL", "PD", "SA", "BL1", "FL1"],
+  "notifications": {
+    "enabled": false,
+    "webhook_url": ""
+  }
+}
