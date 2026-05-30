@@ -12,9 +12,14 @@ class FootballDataClient:
         token = token or CONFIG.football_api_token
         self.client = APIClient(FOOTBALL_API_BASE, headers={"X-Auth-Token": token})
 
-    def fetch_matches(self, league_code: str, season: int, status: str) -> list[dict]:
+    def fetch_matches(self, league_code: str, season: int, status: str,
+                      use_cache: bool = False) -> list[dict]:
         log.info("Fetching %s matches for %s season %d", status, league_code, season)
-        data = self.client.get(f"competitions/{league_code}/matches", params={"season": season, "status": status})
+        data = self.client.get(
+            f"competitions/{league_code}/matches",
+            params={"season": season, "status": status},
+            use_cache=use_cache,
+        )
         return data.get("matches", [])
 
     def fetch_standings(self, league_code: str, season: int) -> list[dict]:
