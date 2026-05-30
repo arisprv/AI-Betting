@@ -33,6 +33,18 @@ def run_predict(args):
     run_predictions()
 
 
+def run_backtest_cmd(args):
+    from backtester import run_backtest
+    import joblib
+    model = joblib.load(CONFIG.model_file)
+    matches = pd.read_csv(CONFIG.historical_file)
+    features = pd.read_csv(CONFIG.features_file)
+    from train_model import FEATURE_COLS
+    bankroll, bets = run_backtest(matches, features, model, FEATURE_COLS)
+    bets.to_csv("backtest_results.csv", index=False)
+    log.info("Backtest complete: %d bets, balance %.2f", len(bets), bankroll.current_capital)
+
+
 def run_full(args):
     run_fetch(args)
     run_features(args)
@@ -47,6 +59,7 @@ def main():
     sub.add_parser("features", help="Build feature set")
     sub.add_parser("train", help="Train prediction model")
     sub.add_parser("predict", help="Generate predictions")
+    sub.add_parser("backtest", help="Run historical backtest")
     sub.add_parser("full", help="Run full pipeline")
 
     args = parser.parse_args()
@@ -55,6 +68,7 @@ def main():
         "features": run_features,
         "train": run_train,
         "predict": run_predict,
+        "backtest": run_backtest_cmd,
         "full": run_full,
     }
 
